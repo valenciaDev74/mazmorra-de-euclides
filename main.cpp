@@ -25,7 +25,7 @@ const int TILE_SIZE = 16;
 // ----------------------------------------------------------
 // Posibles estados del juego
 // ----------------------------------------------------------
-enum class GameState { MENU, PLAYING, GAMEOVER };
+enum class GameState { MENU, PLAYING, GAMEOVER, MESSAGE, COMBAT };
 
 // ----------------------------------------------------------
 // Manejador de texturas
@@ -265,6 +265,45 @@ void DrawMap(vector<vector<int>>& map, Texture2D tileset) {
 }
 
 // ----------------------------------------------------------
+// Dibuja un cuadro de dialogo estilo pixel art
+// ----------------------------------------------------------
+void DrawDialogueBox(const string& message) {
+  int boxX = 30;
+  int boxY = WINDOW_HEIGHT - 110;
+  int boxW = WINDOW_WIDTH - 60;
+  int boxH = 90;
+
+  // Fondo del cuadro
+  DrawRectangle(boxX, boxY, boxW, boxH, {34, 32, 52, 220});
+
+  // Borde exterior
+  DrawRectangleLinesEx({(float)boxX, (float)boxY, (float)boxW, (float)boxH}, 3,
+                       {70, 65, 90, 255});
+
+  // Brillo en la esquina superior izquierda (efecto pixel art)
+  DrawRectangle(boxX + 4, boxY + 4, boxW - 40, 1, {90, 85, 110, 255});
+
+  // Texto centrado, dividido por saltos de linea
+  int fontSize = 20;
+  int padding = 4;
+  int drawY = boxY + (boxH / 2) - fontSize;
+  string line = "";
+  for (char c : message) {
+    if (c == '\n') {
+      int lineW = MeasureText(line.c_str(), fontSize);
+      DrawText(line.c_str(), (WINDOW_WIDTH - lineW) / 2, drawY, fontSize,
+               WHITE);
+      drawY += fontSize + 6;
+      line = "";
+    } else {
+      line += c;
+    }
+  }
+  int lineW = MeasureText(line.c_str(), fontSize);
+  DrawText(line.c_str(), (WINDOW_WIDTH - lineW) / 2, drawY, fontSize, WHITE);
+}
+
+// ----------------------------------------------------------
 // PROGRAMA PRINCIPAL
 // ----------------------------------------------------------
 int main() {
@@ -275,6 +314,8 @@ int main() {
   TextureManager texManager;
   texManager.Load("tileset", "assets/pared-mazmorra.png");
   texManager.Load("player", "assets/player.png");
+  texManager.Load("sword", "assets/espada.png");
+  texManager.Load("big-sword", "assets/espada-grande.png");
 
   Texture2D tileset = texManager.Get("tileset");
   SetTextureFilter(tileset, TEXTURE_FILTER_POINT);
@@ -298,6 +339,14 @@ int main() {
 
   // El jugador empieza en la posicion (72, 72), velocidad 50, frame 0
   Player player = {{72, 72}, 50.0f, texManager.Get("player"), 0, 0.0f, 0};
+  Texture2D sword = texManager.Get("sword");
+
+  bool tieneEspada = false;
+  int espadaTileX = 7;
+  int espadaTileY = 1;
+
+  int potions = 3;
+  int mostersDefeated = 0;
 
   vector<Bullet> bullets;  // lista de balas activas
 
@@ -324,105 +373,138 @@ int main() {
 
         if (currentMap->IsValidTile(playerTileX, playerTileY)) {
           int tileID = currentMap->baseLayer[playerTileY][playerTileX];
+          string newMessage = "";
+
+          // Cartel
           if (tileID == 2) {
             if (currentMap == &Afuera) {
-              currentMessage = "Bienvenido a la mazmorra de euclides";
+              newMessage = "Bienvenido a la mazmorra de euclides";
             } else if (currentMap == &Mazmorra) {
-              currentMessage =
-                  "estos moustruos protejen la puerta de salida \n para "
+              newMessage =
+                  "estos monstruos protegen la puerta de salida \n para "
                   "poder "
                   "salir debes derrotarlos matematicamente";
             }
-          } else {
-            currentMessage = "";
-          };
+          }
 
-          if (tileID == 8) {
-            currentMap = &Mazmorra;
-            player.position.x = 0 * TILE_SIZE + (TILE_SIZE / 2.0f);
-            player.position.y = 4 * TILE_SIZE + (TILE_SIZE / 2.0f);
-          };
-        }
-
-        // Disparar una bala con la tecla A
-        if (IsKeyPressed(KEY_A)) {
-          bullets.push_back(
-              {{player.position.x, player.position.y}, 500.0f, true});
-        }
-
-        // Mover todas las balas una por una
-        for (int i = 0; i < bullets.size(); i++) {
-          bullets[i].Update(deltaTime);
-        }
-
-        // Guardar solo las balas que siguen activas
-        {
-          vector<Bullet> activeBullets;
-          for (int i = 0; i < bullets.size(); i++) {
-            if (bullets[i].active) {
-              activeBullets.push_back(bullets[i]);
+          // Espada: muestra mensaje y recoge al presionar A
+          if (!tieneEspada && playerTileX == espadaTileX &&
+              playerTileY == espadaTileY) {
+            newMessage = "Presiona A para recoger la espada";
+            if (IsKeyPressed(KEY_A)) {
+              tieneEspada = true;
             }
           }
-          bullets = activeBullets;
+
+          currentMessage = newMessage;
+
+          if (tileID == 8) {
+            if (!tieneEspada) {
+              currentMessage = "te la van a meter si entras sin espada";
+            } else {
+              currentMap = &Mazmorra;
+              player.position.x = TILE_SIZE / 2.0f;
+              player.position.y = 4 * TILE_SIZE + TILE_SIZE / 2.0f;
+            };
+          };
+
+          if (tileID == 6 || tileID == 7) {
+            currentState = GameState::COMBAT;
+          };
+
+          // Disparar una bala con la tecla A (solo si no esta recogiendo la
+          // espada)
+          if (IsKeyPressed(KEY_A)) {
+            bool sobreEspada = (!tieneEspada && playerTileX == espadaTileX &&
+                                playerTileY == espadaTileY);
+            if (!sobreEspada) {
+              bullets.push_back(
+                  {{player.position.x, player.position.y}, 500.0f, true});
+            }
+          }
+
+          // Mover todas las balas una por una
+          for (int i = 0; i < bullets.size(); i++) {
+            bullets[i].Update(deltaTime);
+          }
+
+          // Guardar solo las balas que siguen activas
+          {
+            vector<Bullet> activeBullets;
+            for (int i = 0; i < bullets.size(); i++) {
+              if (bullets[i].active) {
+                activeBullets.push_back(bullets[i]);
+              }
+            }
+            bullets = activeBullets;
+          }
+          break;
         }
-        break;
+
+        case GameState::GAMEOVER:
+          bullets.clear();
+          player.position = {72, 72};
+          break;
       }
 
-      case GameState::GAMEOVER:
-        bullets.clear();
-        player.position = {72, 72};
-        break;
-    }
+        // ============ DIBUJAR ============
+        BeginTextureMode(canvas);
+        ClearBackground({34, 32, 52, 255});
 
-    // ============ DIBUJAR ============
-    BeginTextureMode(canvas);
-    ClearBackground({34, 32, 52, 255});
+        switch (currentState) {
+          case GameState::MENU:
+            break;
 
-    switch (currentState) {
-      case GameState::MENU:
-        break;
+          case GameState::PLAYING:
+            DrawMap(currentMap->baseLayer, tileset);
 
-      case GameState::PLAYING:
-        DrawMap(currentMap->baseLayer, tileset);
+            // dibujar espada
+            if (!tieneEspada) {
+              Vector2 pos = {(float)(espadaTileX * TILE_SIZE),
+                             (float)(espadaTileY * TILE_SIZE)};
+              DrawTextureV(sword, pos, WHITE);
+            }
 
-        player.Draw();
-        // Dibujar todas las balas
-        for (int i = 0; i < bullets.size(); i++) {
-          bullets[i].Draw();
+            player.Draw();
+
+            // Dibujar todas las balas
+            for (int i = 0; i < bullets.size(); i++) {
+              bullets[i].Draw();
+            }
+
+            break;
+
+          case GameState::COMBAT:
+
+            break;
+          case GameState::GAMEOVER:
+            DrawText("Game Over", 16, 16, 20, LIGHTGRAY);
+            break;
+
+          default:
+            break;
         }
 
-        break;
+        EndTextureMode();
 
-      case GameState::GAMEOVER:
-        DrawText("Game Over", 16, 16, 20, LIGHTGRAY);
-        break;
-
-      default:
-        break;
+        BeginDrawing();
+        DrawTexturePro(canvas.texture, canvasSourceRec, destRec, origin, 0.0f,
+                       WHITE);
+        // casos especiales que no quiero que me toque el texturemode
+        if (currentState == GameState::MENU) {
+          string text = "Presiona ENTER para empezar";
+          int textWidth = MeasureText("Presiona ENTER para empezar", 20);
+          DrawText(text.c_str(), (WINDOW_WIDTH - textWidth) / 2.0f,
+                   WINDOW_HEIGHT / 2.0f, 20, LIGHTGRAY);
+        }
+        if (currentState == GameState::PLAYING && !currentMessage.empty()) {
+          DrawDialogueBox(currentMessage);
+        }
+        EndDrawing();
     }
 
-    EndTextureMode();
-
-    BeginDrawing();
-    DrawTexturePro(canvas.texture, canvasSourceRec, destRec, origin, 0.0f,
-                   WHITE);
-    // casos especiales que no quiero que me toque el texturemode
-    if (currentState == GameState::MENU) {
-      string text = "Presiona ENTER para empezar";
-      int textWidth = MeasureText("Presiona ENTER para empezar", 20);
-      DrawText(text.c_str(), (WINDOW_WIDTH - textWidth) / 2.0f,
-               WINDOW_HEIGHT / 2.0f, 20, LIGHTGRAY);
-    }
-    if (currentState == GameState::PLAYING && !currentMessage.empty()) {
-      int textWidth = MeasureText(currentMessage.c_str(), 20);
-      DrawText(currentMessage.c_str(), (WINDOW_WIDTH - textWidth) / 2.0f,
-               WINDOW_HEIGHT - 80, 20, LIGHTGRAY);
-    }
-    EndDrawing();
+    // --- LIMPIEZA ---
+    texManager.UnloadAll();
+    CloseWindow();
+    return 0;
   }
-
-  // --- LIMPIEZA ---
-  texManager.UnloadAll();
-  CloseWindow();
-  return 0;
-}
