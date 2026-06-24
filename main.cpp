@@ -561,7 +561,7 @@ int main() {
   // cargar texturas
   TextureManager texManager;
   texManager.Load("tileset", "assets/pared-mazmorra.png");
-  texManager.Load("player", "assets/player-2.png");
+  texManager.Load("player", "assets/player.png");
   texManager.Load("sword", "assets/espada.png");
   texManager.Load("big-sword", "assets/espada-grande.png");
   texManager.Load("big-monster", "assets/mounstruo-grande.png");
@@ -605,7 +605,7 @@ int main() {
 
   bool tieneEspada = false;
   int espadaTileX = 7;
-  int espadaTileY = 1;
+  int espadaTileY = 8;
 
   int potions = 3;
   int monstersDefeated = 0;
@@ -649,6 +649,8 @@ int main() {
       targetMusic = &musicMounstruo;
     }
 
+    // evita repetir la cancion si ya esta
+    // con cada repeticion del ciclo se valida esta madre
     if (targetMusic != currentMusic) {
       if (currentMusic) StopMusicStream(*currentMusic);
       currentMusic = targetMusic;
@@ -673,10 +675,12 @@ int main() {
       case GameState::PLAYING: {
         player.Update(deltaTime, currentMap->baseLayer);
 
+        // obtiene posicion del jugador en tiles
         int playerTileX = (int)(player.position.x / TILE_SIZE);
         int playerTileY = (int)(player.position.y / TILE_SIZE);
 
         if (currentMap->IsValidTile(playerTileX, playerTileY)) {
+          // busca la posicion en el mapa
           int tileID = currentMap->baseLayer[playerTileY][playerTileX];
           string newMessage = "";
 

@@ -7,6 +7,7 @@ uniform sampler2D texture0;
 uniform vec4 colDiffuse;
 
 const float SCANLINES = 144.0;
+const float PI = 3.14159;
 
 void main() {
     vec2 uv = fragTexCoord;
@@ -24,10 +25,26 @@ void main() {
     float g = texture(texture0, uv).g;
     float b = texture(texture0, uv - vec2(ca, 0.0)).b;
 
-    // Scanlines (una por fila de pixel del juego)
-    float scanline = abs(sin(uv.y * SCANLINES * 3.14159));
-    float scanIntensity = 1.0 - scanline * 0.2;
+    vec4 baseColor = vec4(r, g, b, 1.0);
 
-    vec4 color = vec4(r, g, b, 1.0) * scanIntensity * colDiffuse;
-    fragColor = color;
+    // Blur 7x7
+    float off = 0.004;
+    vec4 blur = vec4(0.0);
+    for (int y = -3; y <= 3; y++)
+        for (int x = -3; x <= 3; x++)
+            blur += texture(texture0, uv + vec2(float(x) * off, float(y) * off));
+    blur /= 49.0;
+
+    // Glow: excess del blur sobre el original
+    vec4 excess = max(blur - baseColor, 0.0);
+    float avgExcess = (excess.r + excess.g + excess.b) / 3.0;
+    float glowAmount = smoothstep(0.005, 0.04, avgExcess) * 0.25;
+
+    vec4 color = baseColor + excess * glowAmount;
+
+    // Scanlines
+    float scanline = abs(sin(uv.y * SCANLINES * PI));
+    float scanIntensity = 1.0 - scanline * 0.15;
+
+    fragColor = color * scanIntensity * colDiffuse;
 }
