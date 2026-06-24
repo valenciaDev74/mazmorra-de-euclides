@@ -7,7 +7,10 @@
 
 #include <raylib.h>
 
+#include <cstdlib>
+#include <ctime>
 #include <iostream>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -25,11 +28,10 @@ const int TILE_SIZE = 16;
 // ----------------------------------------------------------
 // Posibles estados del juego
 // ----------------------------------------------------------
-enum class GameState { MENU, PLAYING, GAMEOVER, MESSAGE, COMBAT };
+enum class GameState { MENU, PLAYING, GAMEOVER, COMBAT, WIN };
 
 // ----------------------------------------------------------
 // Manejador de texturas
-// Guarda texturas en un diccionario para usarlas donde sea
 // ----------------------------------------------------------
 struct TextureManager {
   unordered_map<string, Texture2D> textures;
@@ -56,6 +58,53 @@ struct TextureManager {
   }
 };
 
+struct SoundManager {
+  unordered_map<string, Sound> sounds;
+  unordered_map<string, Music> music;
+
+  void Load(const string& id, const string& filePath) {
+    if (sounds.find(id) != sounds.end()) return;
+
+    Sound snd = LoadSound(filePath.c_str());
+
+    if (snd.frameCount == 0) {
+      cout << "ERROR: no se pudo cargar el sonido: " << filePath << endl;
+    } else {
+      sounds[id] = snd;
+    }
+  }
+
+  Sound Get(const string& id) { return sounds[id]; }
+
+  void LoadMusic(const string& id, const string& filePath) {
+    if (music.find(id) != music.end()) return;
+
+    Music mus = LoadMusicStream(filePath.c_str());
+
+    if (mus.frameCount == 0) {
+      cout << "ERROR: no se pudo cargar la musica: " << filePath << endl;
+    } else {
+      music[id] = mus;
+    }
+  }
+
+  Music GetMusic(const string& id) { return music[id]; }
+
+  void UnloadAll() {
+    for (auto& pair : sounds) {
+      UnloadSound(pair.second);
+    }
+    sounds.clear();
+    for (auto& pair : music) {
+      UnloadMusicStream(pair.second);
+    }
+    music.clear();
+  }
+};
+
+// ----------------------------------------------------------
+// Estructura del mapa
+// ----------------------------------------------------------
 struct GameMap {
   string name;
   int width;
@@ -102,17 +151,14 @@ GameMap Mazmorra = {
 };
 
 // ----------------------------------------------------------
-// Pregunta si un tipo de casilla es pared (no se puede pasar)
+// Pregunta si un tipo de casilla es pared
 // ----------------------------------------------------------
 bool IsWall(int tileType) {
   return tileType == 1 || tileType == 4 || tileType == 0;
 }
 
-// bool isSign(int tileType) { return tileType == 2 || tileType == 3; }
-
 // ----------------------------------------------------------
-// Revisa si el jugador se puede mover a una posicion
-// sin chocar contra una pared
+// Colision del jugador contra el mapa
 // ----------------------------------------------------------
 bool CanMoveTo(Vector2 center, vector<vector<int>>& map) {
   int mapHeight = map.size();
@@ -134,7 +180,6 @@ bool CanMoveTo(Vector2 center, vector<vector<int>>& map) {
     }
   }
 
-  // que no se salga del mapa
   float halfSize = TILE_SIZE / 4;
   if (center.x - halfSize < 0) return false;
   if (center.x + halfSize > mapWidth * TILE_SIZE) return false;
@@ -158,9 +203,9 @@ struct Player {
   static constexpr int FRAME_WIDTH = 16;
   static constexpr int FRAME_HEIGHT = 16;
   static constexpr int FRAME_COUNT = 3;
-  static constexpr float ANIM_SPEED = 0.15f;
+  static constexpr float ANIM_SPEED = 0.3f;
 
-  // direcciones: 0=abajo, 1=izquierda, 2=derecha, 3=arriba
+  // direcciones: 0=abajo, 1=derecha, 2=izquierda, 3=arriba
 
   void Update(float deltaTime, vector<vector<int>>& map) {
     bool moving = false;
@@ -190,22 +235,20 @@ struct Player {
     }
 
     if (moving) {
-      // Intentar moverse en X, luego en Y (separado para no trabarse en
-      // esquinas)
       Vector2 tryPos = {nextPos.x, position.y};
       if (CanMoveTo(tryPos, map)) position.x = nextPos.x;
 
       tryPos = {position.x, nextPos.y};
       if (CanMoveTo(tryPos, map)) position.y = nextPos.y;
 
-      // Cambiar el frame de animacion cada cierto tiempo
       frameTimer += deltaTime;
       if (frameTimer >= ANIM_SPEED) {
         frameTimer = 0.0f;
-        currentFrame = (currentFrame == 1) ? 2 : 1;
+
+        // recorre los frames
+        currentFrame = (currentFrame + 1) % 3;
       }
     } else {
-      // Quieto => frame 0 (sin animacion)
       currentFrame = 0;
       frameTimer = 0.0f;
     }
@@ -222,27 +265,28 @@ struct Player {
 };
 
 // ----------------------------------------------------------
-// LAS BALAS que dispara el jugador
+// LAS BALAS
+// codigo residuo de cuando estaba aprendiendo a usar raylib
 // ----------------------------------------------------------
-struct Bullet {
-  Vector2 position;
-  float speed;
-  bool active;
+// struct Bullet {
+//   Vector2 position;
+//   float speed;
+//   bool active;
 
-  void Update(float deltaTime) {
-    position.y += deltaTime * speed;
-    if (position.y < 0) active = false;
-  }
+//   void Update(float deltaTime) {
+//     position.y += deltaTime * speed;
+//     if (position.y < 0) active = false;
+//   }
 
-  void Draw() {
-    if (active) {
-      DrawCircleV(position, 5, YELLOW);
-    }
-  }
-};
+//   void Draw() {
+//     if (active) {
+//       DrawCircleV(position, 5, YELLOW);
+//     }
+//   }
+// };
 
 // ----------------------------------------------------------
-// Dibuja el mapa completo con la hoja de tiles
+// Dibuja el mapa completo
 // ----------------------------------------------------------
 void DrawMap(vector<vector<int>>& map, Texture2D tileset) {
   int tilesPerRow = tileset.width / TILE_SIZE;
@@ -265,7 +309,7 @@ void DrawMap(vector<vector<int>>& map, Texture2D tileset) {
 }
 
 // ----------------------------------------------------------
-// Dibuja un cuadro de dialogo estilo pixel art
+// Cuadro de dialogo
 // ----------------------------------------------------------
 void DrawDialogueBox(const string& message) {
   int boxX = 30;
@@ -273,19 +317,14 @@ void DrawDialogueBox(const string& message) {
   int boxW = WINDOW_WIDTH - 60;
   int boxH = 90;
 
-  // Fondo del cuadro
   DrawRectangle(boxX, boxY, boxW, boxH, {34, 32, 52, 220});
 
-  // Borde exterior
   DrawRectangleLinesEx({(float)boxX, (float)boxY, (float)boxW, (float)boxH}, 3,
                        {70, 65, 90, 255});
 
-  // Brillo en la esquina superior izquierda (efecto pixel art)
   DrawRectangle(boxX + 4, boxY + 4, boxW - 40, 1, {90, 85, 110, 255});
 
-  // Texto centrado, dividido por saltos de linea
   int fontSize = 20;
-  int padding = 4;
   int drawY = boxY + (boxH / 2) - fontSize;
   string line = "";
   for (char c : message) {
@@ -304,25 +343,151 @@ void DrawDialogueBox(const string& message) {
 }
 
 // ----------------------------------------------------------
+// Pantalla de combate
+// ----------------------------------------------------------
+void DrawCombatScreen(int a, int b, int quotient, int remainder,
+                      bool showResult, const string& input, int hp, int pots,
+                      int feedback, Texture2D bigSword, Texture2D bigMonster,
+                      int monsterFrame) {
+  // Fondo oscuro
+  DrawRectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, {20, 18, 35, 255});
+
+  // Titulo
+  string title = "COMBATE";
+  int titleW = MeasureText(title.c_str(), 28);
+  DrawText(title.c_str(), (WINDOW_WIDTH - titleW) / 2, 20, 28,
+           {200, 50, 50, 255});
+
+  // Cociente (aparece arriba del monstruo)
+  if (showResult) {
+    string qText = "cociente: " + to_string(quotient);
+    int qW = MeasureText(qText.c_str(), 20);
+    DrawText(qText.c_str(), (WINDOW_WIDTH - qW) / 2, 78, 20, YELLOW);
+  }
+
+  // Monstruo animado
+  int monsterSize = 96;
+  int monsterX = (WINDOW_WIDTH - monsterSize) / 2;
+  int monsterY = 108;
+  int srcX = (monsterFrame % 4) * 48;
+  int srcY = (monsterFrame / 4) * 48;
+  Rectangle monsterSrc = {(float)srcX, (float)srcY, 48, 48};
+  Rectangle monsterDst = {(float)monsterX, (float)monsterY, (float)monsterSize,
+                          (float)monsterSize};
+  DrawTexturePro(bigMonster, monsterSrc, monsterDst, {0, 0}, 0, WHITE);
+
+  // Numero A a la izquierda
+  string aText = to_string(a);
+  int aW = MeasureText(aText.c_str(), 36);
+  DrawText(aText.c_str(), monsterX - aW - 24, monsterY + 26, 36, WHITE);
+
+  // Numero B a la derecha
+  string bText = to_string(b);
+  DrawText(bText.c_str(), monsterX + monsterSize + 24, monsterY + 26, 36,
+           WHITE);
+
+  // Residuo (aparece debajo del monstruo)
+  if (showResult) {
+    string rText = "residuo: " + to_string(remainder);
+    int rW = MeasureText(rText.c_str(), 20);
+    DrawText(rText.c_str(), (WINDOW_WIDTH - rW) / 2,
+             monsterY + monsterSize + 10, 20, YELLOW);
+  }
+
+  // Feedback
+  if (feedback == 1) {
+    string fText = "Correcto!";
+    int fW = MeasureText(fText.c_str(), 24);
+    DrawText(fText.c_str(), (WINDOW_WIDTH - fW) / 2,
+             monsterY + monsterSize + 40, 24, GREEN);
+  } else if (feedback == 2) {
+    string fText = "Incorrecto!";
+    int fW = MeasureText(fText.c_str(), 24);
+    DrawText(fText.c_str(), (WINDOW_WIDTH - fW) / 2,
+             monsterY + monsterSize + 40, 24, RED);
+  }
+
+  // HP y pociones
+  string hpText = "Vida: ";
+  for (int i = 0; i < hp; i++) hpText += "X ";
+  DrawText(hpText.c_str(), 30, 290, 22, RED);
+
+  string potText = "Pociones: " + to_string(pots) + "  [P]";
+  DrawText(potText.c_str(), 30, 320, 22, GREEN);
+
+  // Espada grande
+  Rectangle swordSrc = {0, 0, 144, 48};
+  Rectangle swordDst = {0, 460, 720, 240};
+  DrawTexturePro(bigSword, swordSrc, swordDst, {0, 0}, 0, WHITE);
+
+  // Input box
+  int inputBoxW = 250;
+  int inputBoxH = 40;
+  int inputBoxX = (WINDOW_WIDTH - inputBoxW) / 2;
+  int inputBoxY = 560;
+
+  string inputLabel = "Escribe el cociente:";
+  int labelW = MeasureText(inputLabel.c_str(), 16);
+  DrawText(inputLabel.c_str(), (WINDOW_WIDTH - labelW) / 2, inputBoxY - 24, 16,
+           WHITE);
+
+  DrawRectangle(inputBoxX, inputBoxY, inputBoxW, inputBoxH, {10, 10, 20, 220});
+  DrawRectangleLinesEx(
+      {(float)inputBoxX, (float)inputBoxY, (float)inputBoxW, (float)inputBoxH},
+      2, {200, 200, 200, 255});
+
+  string displayInput = "> " + input;
+  int cursorBlink = (int)(GetTime() * 4) % 2;
+  if (cursorBlink) displayInput += "_";
+  DrawText(displayInput.c_str(), inputBoxX + 8, inputBoxY + 8, 20, WHITE);
+
+  // Instruccion
+  string instr = "ENTER para confirmar  |  BACKSPACE para borrar";
+  int instrW = MeasureText(instr.c_str(), 12);
+  DrawText(instr.c_str(), (WINDOW_WIDTH - instrW) / 2, inputBoxY + 50, 12,
+           {150, 150, 150, 255});
+}
+
+// ----------------------------------------------------------
 // PROGRAMA PRINCIPAL
 // ----------------------------------------------------------
 int main() {
-  // --- INICIALIZACION ---
+  srand(time(0));
+
   InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "mazmorra de euclides");
+  InitAudioDevice();
   SetTargetFPS(60);
 
+  // cargar sonidos y musica
+  SoundManager sndManager;
+  sndManager.LoadMusic("mounstruo", "assets/sounds/mounstro.ogg");
+  sndManager.LoadMusic("mazmorra", "assets/sounds/mazmorra.ogg");
+  sndManager.LoadMusic("menu", "assets/sounds/menu.ogg");
+
+  Music musicMenu = sndManager.GetMusic("menu");
+  Music musicMazmorra = sndManager.GetMusic("mazmorra");
+  Music musicMounstruo = sndManager.GetMusic("mounstruo");
+  Music* currentMusic = nullptr;
+
+  musicMenu.looping = false;
+
+  // cargar texturas
   TextureManager texManager;
   texManager.Load("tileset", "assets/pared-mazmorra.png");
   texManager.Load("player", "assets/player.png");
   texManager.Load("sword", "assets/espada.png");
   texManager.Load("big-sword", "assets/espada-grande.png");
+  texManager.Load("big-monster", "assets/mounstruo-grande.png");
 
   Texture2D tileset = texManager.Get("tileset");
   SetTextureFilter(tileset, TEXTURE_FILTER_POINT);
+  Texture2D bigSword = texManager.Get("big-sword");
+  SetTextureFilter(bigSword, TEXTURE_FILTER_POINT);
   GameMap* currentMap = &Afuera;
 
-  // El "lienzo" donde dibujamos el juego
-  // (para luego estirarlo al tamano de la ventana)
+  Texture2D bigMonster = texManager.Get("big-monster");
+  SetTextureFilter(bigMonster, TEXTURE_FILTER_POINT);
+
   int virtualWidth = currentMap->width * TILE_SIZE;
   int virtualHeight = currentMap->height * TILE_SIZE;
 
@@ -337,8 +502,9 @@ int main() {
   // --- VARIABLES DEL JUEGO ---
   GameState currentState = GameState::MENU;
 
-  // El jugador empieza en la posicion (72, 72), velocidad 50, frame 0
-  Player player = {{72, 72}, 50.0f, texManager.Get("player"), 0, 0.0f, 0};
+  Texture2D playerTex = texManager.Get("player");
+  SetTextureFilter(playerTex, TEXTURE_FILTER_POINT);
+  Player player = {{72, 72}, 50.0f, playerTex, 0, 0.0f, 0};
   Texture2D sword = texManager.Get("sword");
 
   bool tieneEspada = false;
@@ -346,19 +512,64 @@ int main() {
   int espadaTileY = 1;
 
   int potions = 3;
-  int mostersDefeated = 0;
-
-  vector<Bullet> bullets;  // lista de balas activas
+  int monstersDefeated = 0;
 
   string currentMessage = "";
-  // --- BUCLE PRINCIPAL DEL JUEGO ---
+
+  // --- VARIABLES DE COMBATE ---
+  int combatA = 0;
+  int combatB = 0;
+  int playerHP = 3;
+  int playerMaxHP = 3;
+  string combatInput = "";
+  int lastQuotient = 0;
+  int lastRemainder = 0;
+  bool combatShowResult = false;
+  float combatTimer = 0;
+  int combatFeedback = 0;  // 0=nada, 1=correcto, 2=incorrecto
+  bool combatWon = false;
+  int combatMonsterTileX = 0;
+  int combatMonsterTileY = 0;
+  int monsterFrame = 0;
+  float monsterAnimTimer = 0.0f;
+  int monsterAnimState = 0;  // 0=idle, 1=ataque, 2=danho
+
+  // --- BUCLE PRINCIPAL ---
   while (!WindowShouldClose()) {
     float deltaTime = GetFrameTime();
+
+    // Musica de fondo
+    if (currentMusic) {
+      UpdateMusicStream(*currentMusic);
+    }
+
+    Music* targetMusic = nullptr;
+    if (currentState == GameState::MENU || currentState == GameState::WIN ||
+        currentState == GameState::GAMEOVER) {
+      targetMusic = &musicMenu;
+    } else if (currentState == GameState::PLAYING) {
+      targetMusic = &musicMazmorra;
+    } else if (currentState == GameState::COMBAT) {
+      targetMusic = &musicMounstruo;
+    }
+
+    if (targetMusic != currentMusic) {
+      if (currentMusic) StopMusicStream(*currentMusic);
+      currentMusic = targetMusic;
+      if (currentMusic) PlayMusicStream(*currentMusic);
+    }
 
     // ============ ACTUALIZAR ============
     switch (currentState) {
       case GameState::MENU:
         if (IsKeyPressed(KEY_ENTER)) {
+          currentMap = &Afuera;
+          player.position = {72, 72};
+          tieneEspada = false;
+          playerHP = playerMaxHP;
+          potions = 3;
+          monstersDefeated = 0;
+          currentMessage = "";
           currentState = GameState::PLAYING;
         }
         break;
@@ -366,8 +577,6 @@ int main() {
       case GameState::PLAYING: {
         player.Update(deltaTime, currentMap->baseLayer);
 
-        // Obtener la posicion del jugador en el mapa
-        // osea en que tile esta
         int playerTileX = (int)(player.position.x / TILE_SIZE);
         int playerTileY = (int)(player.position.y / TILE_SIZE);
 
@@ -387,7 +596,7 @@ int main() {
             }
           }
 
-          // Espada: muestra mensaje y recoge al presionar A
+          // Espada
           if (!tieneEspada && playerTileX == espadaTileX &&
               playerTileY == espadaTileY) {
             newMessage = "Presiona A para recoger la espada";
@@ -398,113 +607,290 @@ int main() {
 
           currentMessage = newMessage;
 
+          // Transicion entre mapas
           if (tileID == 8) {
-            if (!tieneEspada) {
-              currentMessage = "te la van a meter si entras sin espada";
-            } else {
-              currentMap = &Mazmorra;
-              player.position.x = TILE_SIZE / 2.0f;
-              player.position.y = 4 * TILE_SIZE + TILE_SIZE / 2.0f;
-            };
-          };
+            if (currentMap == &Afuera) {
+              if (!tieneEspada) {
+                currentMessage = "te la van a meter si entras sin espada papu";
+              } else {
+                currentMap = &Mazmorra;
+                player.position.x = TILE_SIZE / 2.0f;
+                player.position.y = 4 * TILE_SIZE + TILE_SIZE / 2.0f;
+              }
+            } else if (currentMap == &Mazmorra) {
+              if (monstersDefeated != 3) {
+                currentMessage = "debes derrotar a todos los monstruos";
 
-          if (tileID == 6 || tileID == 7) {
-            currentState = GameState::COMBAT;
-          };
-
-          // Disparar una bala con la tecla A (solo si no esta recogiendo la
-          // espada)
-          if (IsKeyPressed(KEY_A)) {
-            bool sobreEspada = (!tieneEspada && playerTileX == espadaTileX &&
-                                playerTileY == espadaTileY);
-            if (!sobreEspada) {
-              bullets.push_back(
-                  {{player.position.x, player.position.y}, 500.0f, true});
-            }
-          }
-
-          // Mover todas las balas una por una
-          for (int i = 0; i < bullets.size(); i++) {
-            bullets[i].Update(deltaTime);
-          }
-
-          // Guardar solo las balas que siguen activas
-          {
-            vector<Bullet> activeBullets;
-            for (int i = 0; i < bullets.size(); i++) {
-              if (bullets[i].active) {
-                activeBullets.push_back(bullets[i]);
+              } else {
+                currentState = GameState::WIN;
+                player.position.x = TILE_SIZE / 2.0f;
+                player.position.y = TILE_SIZE / 2.0f;
               }
             }
-            bullets = activeBullets;
+          }
+
+          // Iniciar combate
+          if ((tileID == 6 || tileID == 7) && tieneEspada) {
+            combatA = 10 + rand() % 20;
+            combatB = 2 + rand() % 9;
+            combatInput = "";
+            lastQuotient = 0;
+            lastRemainder = 0;
+            combatShowResult = false;
+            combatTimer = 0;
+            combatFeedback = 0;
+            combatWon = false;
+            combatMonsterTileX = playerTileX;
+            combatMonsterTileY = playerTileY;
+            monsterFrame = 0;
+            monsterAnimTimer = 0;
+            monsterAnimState = 0;
+            currentState = GameState::COMBAT;
+          }
+        }
+        break;
+      }
+
+      case GameState::COMBAT: {
+        // Si estamos mostrando resultado, esperar el timer
+        if (combatTimer > 0) {
+          combatTimer -= deltaTime;
+          if (combatTimer <= 0) {
+            if (combatWon) {
+              // Volver al mapa
+
+              // quitar al enemigo de ahi, reemplaza con el tile 15
+              currentMap->baseLayer[combatMonsterTileY][combatMonsterTileX] =
+                  15;
+              monstersDefeated++;
+              currentState = GameState::PLAYING;
+            } else if (combatFeedback == 1) {
+              // Siguiente ronda (ya se actualizaron A y B)
+              combatShowResult = false;
+              combatFeedback = 0;
+            } else {
+              // Feedback incorrecto: misma ronda
+              combatShowResult = false;
+              combatFeedback = 0;
+            }
           }
           break;
         }
 
-        case GameState::GAMEOVER:
-          bullets.clear();
-          player.position = {72, 72};
-          break;
+        // Actualizar animacion del monstruo
+        if (monsterAnimState != 0) {
+          monsterAnimTimer += deltaTime;
+          if (monsterAnimTimer >= 2.5f) {
+            monsterFrame = 0;
+            monsterAnimState = 0;
+          }
+        }
+
+        // Input numerico
+        for (int k = KEY_ZERO; k <= KEY_NINE; k++) {
+          if (IsKeyPressed(k)) {
+            // esta vaina usa hexagesimal
+            if (combatInput.length() < 4) {
+              combatInput += (char)('0' + (k - KEY_ZERO));
+            }
+          }
+        }
+
+        if (IsKeyPressed(KEY_BACKSPACE) && !combatInput.empty()) {
+          combatInput.pop_back();
+        }
+
+        // Usar pocion
+        if (IsKeyPressed(KEY_P) && potions > 0 && playerHP < playerMaxHP) {
+          potions--;
+          playerHP++;
+        }
+
+        // Confirmar respuesta
+        if (IsKeyPressed(KEY_ENTER) && !combatInput.empty()) {
+          int playerAnswer = stoi(combatInput);
+          int correctQuotient = combatA / combatB;
+          int remainder = combatA % combatB;
+
+          lastQuotient = correctQuotient;
+          lastRemainder = remainder;
+          combatShowResult = true;
+          combatInput = "";
+
+          if (playerAnswer == correctQuotient) {
+            combatFeedback = 1;
+            monsterAnimState = 2;
+            monsterAnimTimer = 0;
+            monsterFrame = 4 + rand() % 3;
+            if (remainder == 0) {
+              combatWon = true;
+              combatTimer = 2.5f;
+            } else {
+              combatA = combatB;
+              combatB = remainder;
+              combatTimer = 2.5f;
+            }
+          } else {
+            playerHP--;
+            combatFeedback = 2;
+            monsterAnimState = 1;
+            monsterAnimTimer = 0;
+            monsterFrame = 1 + rand() % 3;
+            if (playerHP <= 0) {
+              currentState = GameState::GAMEOVER;
+            } else {
+              combatTimer = 2.5f;
+            }
+          }
+        }
+        break;
       }
 
-        // ============ DIBUJAR ============
-        BeginTextureMode(canvas);
-        ClearBackground({34, 32, 52, 255});
-
-        switch (currentState) {
-          case GameState::MENU:
-            break;
-
-          case GameState::PLAYING:
-            DrawMap(currentMap->baseLayer, tileset);
-
-            // dibujar espada
-            if (!tieneEspada) {
-              Vector2 pos = {(float)(espadaTileX * TILE_SIZE),
-                             (float)(espadaTileY * TILE_SIZE)};
-              DrawTextureV(sword, pos, WHITE);
-            }
-
-            player.Draw();
-
-            // Dibujar todas las balas
-            for (int i = 0; i < bullets.size(); i++) {
-              bullets[i].Draw();
-            }
-
-            break;
-
-          case GameState::COMBAT:
-
-            break;
-          case GameState::GAMEOVER:
-            DrawText("Game Over", 16, 16, 20, LIGHTGRAY);
-            break;
-
-          default:
-            break;
+      case GameState::GAMEOVER:
+        if (IsKeyPressed(KEY_ENTER)) {
+          currentState = GameState::MENU;
         }
+        break;
 
-        EndTextureMode();
-
-        BeginDrawing();
-        DrawTexturePro(canvas.texture, canvasSourceRec, destRec, origin, 0.0f,
-                       WHITE);
-        // casos especiales que no quiero que me toque el texturemode
-        if (currentState == GameState::MENU) {
-          string text = "Presiona ENTER para empezar";
-          int textWidth = MeasureText("Presiona ENTER para empezar", 20);
-          DrawText(text.c_str(), (WINDOW_WIDTH - textWidth) / 2.0f,
-                   WINDOW_HEIGHT / 2.0f, 20, LIGHTGRAY);
+      case GameState::WIN:
+        if (IsKeyPressed(KEY_ENTER)) {
+          currentState = GameState::MENU;
         }
-        if (currentState == GameState::PLAYING && !currentMessage.empty()) {
-          DrawDialogueBox(currentMessage);
-        }
-        EndDrawing();
+        break;
     }
 
-    // --- LIMPIEZA ---
-    texManager.UnloadAll();
-    CloseWindow();
-    return 0;
+    // ============ DIBUJAR ============
+    BeginTextureMode(canvas);
+    ClearBackground({34, 32, 52, 255});
+
+    switch (currentState) {
+      case GameState::MENU:
+        break;
+
+      case GameState::PLAYING:
+        DrawMap(currentMap->baseLayer, tileset);
+
+        if (!tieneEspada) {
+          Vector2 pos = {(float)(espadaTileX * TILE_SIZE),
+                         (float)(espadaTileY * TILE_SIZE)};
+          DrawTextureV(sword, pos, WHITE);
+        }
+
+        player.Draw();
+        break;
+
+      case GameState::COMBAT:
+        break;
+
+      case GameState::GAMEOVER:
+        break;
+
+      case GameState::WIN:
+        break;
+
+      default:
+        break;
+    }
+
+    EndTextureMode();
+
+    // Dibujar en la pantalla real
+    BeginDrawing();
+    DrawTexturePro(canvas.texture, canvasSourceRec, destRec, origin, 0.0f,
+                   WHITE);
+
+    if (currentState == GameState::MENU) {
+      // Fondo
+      DrawRectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, {20, 18, 35, 255});
+
+      // Titulo
+      string title = "MAZMORRA DE EUCLIDES";
+      int titleW = MeasureText(title.c_str(), 40);
+      DrawText(title.c_str(), (WINDOW_WIDTH - titleW) / 2, 100, 40,
+               {220, 180, 60, 255});
+
+      // Subtitulo
+      string sub = "~ un juego matematico ~";
+      int subW = MeasureText(sub.c_str(), 18);
+      DrawText(sub.c_str(), (WINDOW_WIDTH - subW) / 2, 150, 18,
+               {180, 180, 180, 255});
+
+      // Monstruo decorativo
+      int monSize = 144;
+      Rectangle monSrc = {0, 0, 48, 48};
+      Rectangle monDst = {(float)((WINDOW_WIDTH - monSize) / 2), 200,
+                          (float)monSize, (float)monSize};
+      DrawTexturePro(bigMonster, monSrc, monDst, {0, 0}, 0, WHITE);
+
+      // Espada decorativa
+      Rectangle swordSrc = {0, 0, 144, 48};
+      Rectangle swordDst = {(float)((WINDOW_WIDTH - 288) / 2), 380, 288, 96};
+      DrawTexturePro(bigSword, swordSrc, swordDst, {0, 0}, 0, WHITE);
+
+      // Texto de inicio con parpadeo
+      int blink = (int)(GetTime() * 2) % 2;
+      if (blink) {
+        string start = "Presiona ENTER para empezar";
+        int sw = MeasureText(start.c_str(), 20);
+        DrawText(start.c_str(), (WINDOW_WIDTH - sw) / 2, 520, 20, LIGHTGRAY);
+      }
+
+      // Creditos
+      string cred = "~ juego creado por: xxx ~";
+      int cw = MeasureText(cred.c_str(), 14);
+      DrawText(cred.c_str(), (WINDOW_WIDTH - cw) / 2, 680, 14,
+               {120, 120, 120, 255});
+    }
+
+    if (currentState == GameState::PLAYING && !currentMessage.empty()) {
+      DrawDialogueBox(currentMessage);
+    }
+
+    if (currentState == GameState::COMBAT) {
+      DrawCombatScreen(combatA, combatB, lastQuotient, lastRemainder,
+                       combatShowResult, combatInput, playerHP, potions,
+                       combatFeedback, bigSword, bigMonster, monsterFrame);
+    }
+
+    if (currentState == GameState::GAMEOVER) {
+      string text = "GAME OVER";
+      int tw = MeasureText(text.c_str(), 48);
+      DrawText(text.c_str(), (WINDOW_WIDTH - tw) / 2, WINDOW_HEIGHT / 2 - 30,
+               48, RED);
+
+      string text2 = "Presiona ENTER para volver al menu";
+      int tw2 = MeasureText(text2.c_str(), 20);
+      DrawText(text2.c_str(), (WINDOW_WIDTH - tw2) / 2, WINDOW_HEIGHT / 2 + 30,
+               20, LIGHTGRAY);
+    }
+
+    if (currentState == GameState::WIN) {
+      string text = "GANASTE!";
+      int tw = MeasureText(text.c_str(), 48);
+      DrawText(text.c_str(), (WINDOW_WIDTH - tw) / 2, WINDOW_HEIGHT / 2 - 30,
+               48, GREEN);
+
+      string text2 = "Presiona ENTER para volver al menu";
+      int tw2 = MeasureText(text2.c_str(), 20);
+      DrawText(text2.c_str(), (WINDOW_WIDTH - tw2) / 2, WINDOW_HEIGHT / 2 + 30,
+               20, LIGHTGRAY);
+
+      string cred1 = "juego creado por: xxx";
+      int cw1 = MeasureText(cred1.c_str(), 16);
+      DrawText(cred1.c_str(), (WINDOW_WIDTH - cw1) / 2, WINDOW_HEIGHT / 2 + 70,
+               16, {180, 180, 180, 255});
+
+      string cred2 = "agradecimientos especiales a Gemini";
+      int cw2 = MeasureText(cred2.c_str(), 16);
+      DrawText(cred2.c_str(), (WINDOW_WIDTH - cw2) / 2, WINDOW_HEIGHT / 2 + 95,
+               16, {180, 180, 180, 255});
+    }
+
+    EndDrawing();
   }
+
+  // --- LIMPIEZA ---
+  texManager.UnloadAll();
+  CloseWindow();
+  return 0;
+}
