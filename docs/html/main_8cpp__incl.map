@@ -1,0 +1,17 @@
+<map id="main.cpp" name="main.cpp">
+<area shape="rect" id="Node000001" title="Mazmorra de Euclides &#45; Juego matematico en 2D con raylib." alt="" coords="271,5,354,31"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="5,79,76,104"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="271,33,90,80,89,75,270,28"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="100,79,165,104"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="285,33,176,76,174,71,283,28"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="190,79,249,104"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="299,33,247,72,244,68,296,29"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="273,79,353,104"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="315,31,315,65,310,65,310,31"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="377,79,435,104"/>
+<area shape="poly" id="edge5_Node000001_Node000006" title=" " alt="" coords="329,29,382,68,378,72,326,33"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="460,79,584,104"/>
+<area shape="poly" id="edge6_Node000001_Node000007" title=" " alt="" coords="347,28,476,72,474,77,345,33"/>
+<area shape="rect" id="Node000008" title=" " alt="" coords="608,79,671,104"/>
+<area shape="poly" id="edge7_Node000001_Node000008" title=" " alt="" coords="355,25,595,76,594,81,354,30"/>
+</map>

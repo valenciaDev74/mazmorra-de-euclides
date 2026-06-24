@@ -1,9 +1,10 @@
-// ============================================================
-// MAZMORRA DE EUCLIDES - un jueguito en raylib
-// ============================================================
-// El jugador se mueve por un mapa cuadriculado con las flechas
-// y dispara balas con la tecla A.
-// ============================================================
+/**
+ * @file main.cpp
+ * @brief Mazmorra de Euclides - Juego matematico en 2D con raylib.
+ *
+ * @details Juego de mazmorras con movimiento en cuadricula, recoleccion de
+ * objetos, combate matematico (algoritmo de Euclides) y shader CRT.
+ */
 
 #include <raylib.h>
 
@@ -16,26 +17,38 @@
 
 using namespace std;
 
-// ----------------------------------------------------------
-// Constantes del juego
-// ----------------------------------------------------------
+/** @name Constantes del juego */
+///@{
+/** @brief Ancho de la ventana en pixels. */
 const int WINDOW_WIDTH = 720;
+/** @brief Alto de la ventana en pixels. */
 const int WINDOW_HEIGHT = 720;
+/** @brief Ancho del mapa en tiles. */
 const int MAP_WIDTH = 9;
+/** @brief Alto del mapa en tiles. */
 const int MAP_HEIGHT = 9;
+/** @brief Tamano de cada tile en pixels. */
 const int TILE_SIZE = 16;
+///@}
 
-// ----------------------------------------------------------
-// Posibles estados del juego
-// ----------------------------------------------------------
-enum class GameState { MENU, PLAYING, GAMEOVER, COMBAT, WIN };
+/** @brief Posibles estados del juego. */
+enum class GameState {
+  MENU,     /**< Menu principal. */
+  PLAYING,  /**< Exploracion del mapa. */
+  GAMEOVER, /**< Pantalla de derrota. */
+  COMBAT,   /**< Pantalla de combate matematico. */
+  WIN       /**< Pantalla de victoria. */
+};
 
-// ----------------------------------------------------------
-// Manejador de texturas
-// ----------------------------------------------------------
+/** @brief Manejador de texturas con cacheo por identificador. */
 struct TextureManager {
-  unordered_map<string, Texture2D> textures;
+  unordered_map<string, Texture2D> textures; /**< Mapa id -> textura. */
 
+  /**
+   * @brief Carga una textura desde archivo si no esta en cache.
+   * @param id Identificador unico para la textura.
+   * @param filePath Ruta al archivo de imagen.
+   */
   void Load(const string& id, const string& filePath) {
     if (textures.find(id) != textures.end()) return;
 
@@ -48,8 +61,14 @@ struct TextureManager {
     }
   }
 
+  /**
+   * @brief Obtiene una textura cargada.
+   * @param id Identificador de la textura.
+   * @return Referencia a la Texture2D.
+   */
   Texture2D Get(const string& id) { return textures[id]; }
 
+  /** @brief Libera todas las texturas cargadas. */
   void UnloadAll() {
     for (auto& pair : textures) {
       UnloadTexture(pair.second);
@@ -58,10 +77,16 @@ struct TextureManager {
   }
 };
 
+/** @brief Manejador de sonidos y musica con cacheo por identificador. */
 struct SoundManager {
-  unordered_map<string, Sound> sounds;
-  unordered_map<string, Music> music;
+  unordered_map<string, Sound> sounds; /**< Mapa id -> efecto de sonido. */
+  unordered_map<string, Music> music;  /**< Mapa id -> stream de musica. */
 
+  /**
+   * @brief Carga un efecto de sonido desde archivo.
+   * @param id Identificador unico.
+   * @param filePath Ruta al archivo de audio.
+   */
   void Load(const string& id, const string& filePath) {
     if (sounds.find(id) != sounds.end()) return;
 
@@ -74,8 +99,18 @@ struct SoundManager {
     }
   }
 
+  /**
+   * @brief Obtiene un efecto de sonido cargado.
+   * @param id Identificador del sonido.
+   * @return Referencia al Sound.
+   */
   Sound Get(const string& id) { return sounds[id]; }
 
+  /**
+   * @brief Carga un stream de musica desde archivo.
+   * @param id Identificador unico.
+   * @param filePath Ruta al archivo de musica.
+   */
   void LoadMusic(const string& id, const string& filePath) {
     if (music.find(id) != music.end()) return;
 
@@ -88,8 +123,14 @@ struct SoundManager {
     }
   }
 
+  /**
+   * @brief Obtiene un stream de musica cargado.
+   * @param id Identificador de la musica.
+   * @return Referencia al Music.
+   */
   Music GetMusic(const string& id) { return music[id]; }
 
+  /** @brief Libera todos los sonidos y streams de musica cargados. */
   void UnloadAll() {
     for (auto& pair : sounds) {
       UnloadSound(pair.second);
@@ -102,20 +143,25 @@ struct SoundManager {
   }
 };
 
-// ----------------------------------------------------------
-// Estructura del mapa
-// ----------------------------------------------------------
+/** @brief Representa un mapa del juego con capa de tiles. */
 struct GameMap {
-  string name;
-  int width;
-  int height;
-  vector<vector<int>> baseLayer;
+  string name;                     /**< Nombre del mapa. */
+  int width;                       /**< Ancho en tiles. */
+  int height;                      /**< Alto en tiles. */
+  vector<vector<int>> baseLayer;   /**< Matriz de tiles (y, x). */
 
+  /**
+   * @brief Verifica si una coordenada de tile esta dentro del mapa.
+   * @param x Coordenada X en tiles.
+   * @param y Coordenada Y en tiles.
+   * @return true si la posicion es valida.
+   */
   bool IsValidTile(int x, int y) const {
     return (x >= 0 && x < width && y >= 0 && y < height);
   }
 };
 
+/** @brief Mapa exterior inicial del juego. */
 GameMap Afuera = {
     "Afuera",
     9,
@@ -133,6 +179,7 @@ GameMap Afuera = {
     },
 };
 
+/** @brief Mapa de la mazmorra interior con monstruos. */
 GameMap Mazmorra = {
     "Mazmorra",
     9,
@@ -150,16 +197,23 @@ GameMap Mazmorra = {
     },
 };
 
-// ----------------------------------------------------------
-// Pregunta si un tipo de casilla es pared
-// ----------------------------------------------------------
+/**
+ * @brief Determina si un tipo de tile es una pared (no transitable).
+ * @param tileType Tipo de tile a evaluar.
+ * @return true si es pared (tipo 0, 1 o 4).
+ */
 bool IsWall(int tileType) {
   return tileType == 1 || tileType == 4 || tileType == 0;
 }
 
-// ----------------------------------------------------------
-// Colision del jugador contra el mapa
-// ----------------------------------------------------------
+/**
+ * @brief Verifica colision rectangular contra el mapa.
+ * @details Comprueba si las cuatro esquinas del bounding box del jugador
+ *          colisionan con paredes o se salen de los limites del mapa.
+ * @param center Posicion central del jugador.
+ * @param map Matriz de tiles del mapa actual.
+ * @return true si el movimiento es valido (sin colision).
+ */
 bool CanMoveTo(Vector2 center, vector<vector<int>>& map) {
   int mapHeight = map.size();
   int mapWidth = map[0].size();
@@ -189,24 +243,25 @@ bool CanMoveTo(Vector2 center, vector<vector<int>>& map) {
   return true;
 }
 
-// ----------------------------------------------------------
-// EL JUGADOR
-// ----------------------------------------------------------
+/** @brief Entidad del jugador con animacion y movimiento. */
 struct Player {
-  Vector2 position;
-  float speed;
-  Texture2D texture;
-  int currentFrame;
-  float frameTimer;
-  int direction;
+  Vector2 position;     /**< Posicion actual en pixels. */
+  float speed;          /**< Velocidad de movimiento (px/s). */
+  Texture2D texture;    /**< Spritesheet del jugador. */
+  int currentFrame;     /**< Frame actual de animacion (0-2). */
+  float frameTimer;     /**< Temporizador para cambio de frame. */
+  int direction;        /**< Direccion: 0=abajo, 1=derecha, 2=izquierda, 3=arriba. */
 
   static constexpr int FRAME_WIDTH = 16;
   static constexpr int FRAME_HEIGHT = 16;
   static constexpr int FRAME_COUNT = 3;
   static constexpr float ANIM_SPEED = 0.3f;
 
-  // direcciones: 0=abajo, 1=derecha, 2=izquierda, 3=arriba
-
+  /**
+   * @brief Actualiza posicion y animacion del jugador.
+   * @param deltaTime Tiempo transcurrido desde el ultimo frame.
+   * @param map Matriz de tiles del mapa actual.
+   */
   void Update(float deltaTime, vector<vector<int>>& map) {
     bool moving = false;
     Vector2 nextPos = position;
@@ -254,6 +309,9 @@ struct Player {
     }
   }
 
+  /**
+   * @brief Dibuja el frame actual del jugador en pantalla.
+   */
   void Draw() {
     Rectangle src = {(float)(currentFrame * FRAME_WIDTH),
                      (float)(direction * FRAME_HEIGHT), (float)FRAME_WIDTH,
@@ -264,10 +322,11 @@ struct Player {
   }
 };
 
-// ----------------------------------------------------------
-// LAS BALAS
-// codigo residuo de cuando estaba aprendiendo a usar raylib
-// ----------------------------------------------------------
+/**
+ * @brief Estructura de bala (codigo residual, no utilizado).
+ * @details Codigo sobrante de cuando se estaba aprendiendo raylib.
+ *          Se mantiene comentado como referencia.
+ */
 // struct Bullet {
 //   Vector2 position;
 //   float speed;
@@ -285,9 +344,11 @@ struct Player {
 //   }
 // };
 
-// ----------------------------------------------------------
-// Dibuja el mapa completo
-// ----------------------------------------------------------
+/**
+ * @brief Dibuja el mapa completo recorriendo su matriz de tiles.
+ * @param map Matriz de tiles del mapa.
+ * @param tileset Textura del tileset a usar.
+ */
 void DrawMap(vector<vector<int>>& map, Texture2D tileset) {
   int tilesPerRow = tileset.width / TILE_SIZE;
 
@@ -308,9 +369,12 @@ void DrawMap(vector<vector<int>>& map, Texture2D tileset) {
   }
 }
 
-// ----------------------------------------------------------
-// Cuadro de dialogo
-// ----------------------------------------------------------
+/**
+ * @brief Dibuja un cuadro de dialogo en la parte inferior de la pantalla.
+ * @details Renderiza un recuadro semitransparente con el texto centrado,
+ *          soporta saltos de linea con '\\n'.
+ * @param message Mensaje a mostrar.
+ */
 void DrawDialogueBox(const string& message) {
   int boxX = 30;
   int boxY = WINDOW_HEIGHT - 110;
@@ -342,9 +406,23 @@ void DrawDialogueBox(const string& message) {
   DrawText(line.c_str(), (WINDOW_WIDTH - lineW) / 2, drawY, fontSize, WHITE);
 }
 
-// ----------------------------------------------------------
-// Pantalla de combate
-// ----------------------------------------------------------
+/**
+ * @brief Dibuja la pantalla de combate matematico.
+ * @details Muestra el monstruo animado, los numeros A y B, el cociente y
+ *          residuo, la barra de vida/pociones y el cuadro de entrada.
+ * @param a Dividendo actual.
+ * @param b Divisor actual.
+ * @param quotient Cociente calculado (A/B).
+ * @param remainder Residuo de la division.
+ * @param showResult true para mostrar resultado de la ronda.
+ * @param input Texto ingresado por el jugador.
+ * @param hp Puntos de vida actuales del jugador.
+ * @param pots Pociones restantes.
+ * @param feedback Estado del feedback: 0=nada, 1=correcto, 2=incorrecto.
+ * @param bigSword Textura de la espada grande.
+ * @param bigMonster Textura del monstruo grande.
+ * @param monsterFrame Frame actual de animacion del monstruo.
+ */
 void DrawCombatScreen(int a, int b, int quotient, int remainder,
                       bool showResult, const string& input, int hp, int pots,
                       int feedback, Texture2D bigSword, Texture2D bigMonster,
@@ -427,9 +505,9 @@ void DrawCombatScreen(int a, int b, int quotient, int remainder,
   int inputBoxY = 560;
 
   string inputLabel = "Escribe el cociente:";
-  int labelW = MeasureText(inputLabel.c_str(), 16);
-  DrawText(inputLabel.c_str(), (WINDOW_WIDTH - labelW) / 2, inputBoxY - 24, 16,
-           WHITE);
+  int labelW = MeasureText(inputLabel.c_str(), 22);
+  DrawText(inputLabel.c_str(), (WINDOW_WIDTH - labelW) / 2, inputBoxY - 24, 22,
+           {34, 32, 52, 255});
 
   DrawRectangle(inputBoxX, inputBoxY, inputBoxW, inputBoxH, {10, 10, 20, 220});
   DrawRectangleLinesEx(
@@ -443,14 +521,18 @@ void DrawCombatScreen(int a, int b, int quotient, int remainder,
 
   // Instruccion
   string instr = "ENTER para confirmar  |  BACKSPACE para borrar";
-  int instrW = MeasureText(instr.c_str(), 12);
-  DrawText(instr.c_str(), (WINDOW_WIDTH - instrW) / 2, inputBoxY + 50, 12,
-           {150, 150, 150, 255});
+  int instrW = MeasureText(instr.c_str(), 16);
+  DrawText(instr.c_str(), (WINDOW_WIDTH - instrW) / 2, inputBoxY + 50, 16,
+           {34, 32, 52, 255});
 }
 
-// ----------------------------------------------------------
-// PROGRAMA PRINCIPAL
-// ----------------------------------------------------------
+/**
+ * @brief Punto de entrada del juego.
+ * @details Inicializa ventana, audio, texturas y sonidos. Ejecuta el bucle
+ *          principal con maquina de estados (MENU, PLAYING, COMBAT, GAMEOVER,
+ *          WIN). Aplica post-procesado CRT. Limpia recursos al finalizar.
+ * @return 0 al cerrar correctamente.
+ */
 int main() {
   srand(time(0));
 
@@ -498,6 +580,15 @@ int main() {
                                (float)-virtualHeight};
   Rectangle destRec = {0.0f, 0.0f, (float)WINDOW_WIDTH, (float)WINDOW_HEIGHT};
   Vector2 origin = {0.0f, 0.0f};
+
+  // CRT shader
+  Shader crtShader = LoadShader(0, "assets/shaders/crt.fs");
+  RenderTexture2D screenRT = LoadRenderTexture(WINDOW_WIDTH, WINDOW_HEIGHT);
+  SetTextureFilter(screenRT.texture, TEXTURE_FILTER_BILINEAR);
+  Rectangle screenRTSrc = {0.0f, 0.0f, (float)WINDOW_WIDTH,
+                           (float)-WINDOW_HEIGHT};
+  Rectangle screenRTDst = {0.0f, 0.0f, (float)WINDOW_WIDTH,
+                           (float)WINDOW_HEIGHT};
 
   // --- VARIABLES DEL JUEGO ---
   GameState currentState = GameState::MENU;
@@ -794,9 +885,11 @@ int main() {
 
     EndTextureMode();
 
-    // Dibujar en la pantalla real
-    BeginDrawing();
-    DrawTexturePro(canvas.texture, canvasSourceRec, destRec, origin, 0.0f,
+    // Componer canvas + UI en screenRT
+    BeginTextureMode(screenRT);
+    ClearBackground(BLACK);
+
+    DrawTexturePro(canvas.texture, canvasSourceRec, screenRTDst, origin, 0.0f,
                    WHITE);
 
     if (currentState == GameState::MENU) {
@@ -886,10 +979,21 @@ int main() {
                16, {180, 180, 180, 255});
     }
 
+    EndTextureMode();
+
+    // Dibujar screenRT en la pantalla real con CRT
+    BeginDrawing();
+    ClearBackground(BLACK);
+    BeginShaderMode(crtShader);
+    DrawTexturePro(screenRT.texture, screenRTSrc, screenRTDst, origin, 0.0f,
+                   WHITE);
+    EndShaderMode();
     EndDrawing();
   }
 
   // --- LIMPIEZA ---
+  UnloadShader(crtShader);
+  UnloadRenderTexture(screenRT);
   texManager.UnloadAll();
   CloseWindow();
   return 0;
