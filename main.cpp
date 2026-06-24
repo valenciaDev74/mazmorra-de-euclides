@@ -145,10 +145,10 @@ struct SoundManager {
 
 /** @brief Representa un mapa del juego con capa de tiles. */
 struct GameMap {
-  string name;                     /**< Nombre del mapa. */
-  int width;                       /**< Ancho en tiles. */
-  int height;                      /**< Alto en tiles. */
-  vector<vector<int>> baseLayer;   /**< Matriz de tiles (y, x). */
+  string name;                   /**< Nombre del mapa. */
+  int width;                     /**< Ancho en tiles. */
+  int height;                    /**< Alto en tiles. */
+  vector<vector<int>> baseLayer; /**< Matriz de tiles (y, x). */
 
   /**
    * @brief Verifica si una coordenada de tile esta dentro del mapa.
@@ -245,12 +245,12 @@ bool CanMoveTo(Vector2 center, vector<vector<int>>& map) {
 
 /** @brief Entidad del jugador con animacion y movimiento. */
 struct Player {
-  Vector2 position;     /**< Posicion actual en pixels. */
-  float speed;          /**< Velocidad de movimiento (px/s). */
-  Texture2D texture;    /**< Spritesheet del jugador. */
-  int currentFrame;     /**< Frame actual de animacion (0-2). */
-  float frameTimer;     /**< Temporizador para cambio de frame. */
-  int direction;        /**< Direccion: 0=abajo, 1=derecha, 2=izquierda, 3=arriba. */
+  Vector2 position;  /**< Posicion actual en pixels. */
+  float speed;       /**< Velocidad de movimiento (px/s). */
+  Texture2D texture; /**< Spritesheet del jugador. */
+  int currentFrame;  /**< Frame actual de animacion (0-2). */
+  float frameTimer;  /**< Temporizador para cambio de frame. */
+  int direction; /**< Direccion: 0=abajo, 1=derecha, 2=izquierda, 3=arriba. */
 
   static constexpr int FRAME_WIDTH = 16;
   static constexpr int FRAME_HEIGHT = 16;
@@ -428,7 +428,7 @@ void DrawCombatScreen(int a, int b, int quotient, int remainder,
                       int feedback, Texture2D bigSword, Texture2D bigMonster,
                       int monsterFrame) {
   // Fondo oscuro
-  DrawRectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, {20, 18, 35, 255});
+  DrawRectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, {34, 32, 52, 255});
 
   // Titulo
   string title = "COMBATE";
@@ -444,7 +444,7 @@ void DrawCombatScreen(int a, int b, int quotient, int remainder,
   }
 
   // Monstruo animado
-  int monsterSize = 96;
+  int monsterSize = 144;
   int monsterX = (WINDOW_WIDTH - monsterSize) / 2;
   int monsterY = 108;
   int srcX = (monsterFrame % 4) * 48;
@@ -457,11 +457,11 @@ void DrawCombatScreen(int a, int b, int quotient, int remainder,
   // Numero A a la izquierda
   string aText = to_string(a);
   int aW = MeasureText(aText.c_str(), 36);
-  DrawText(aText.c_str(), monsterX - aW - 24, monsterY + 26, 36, WHITE);
+  DrawText(aText.c_str(), monsterX - aW - 24, monsterY + 46, 36, WHITE);
 
   // Numero B a la derecha
   string bText = to_string(b);
-  DrawText(bText.c_str(), monsterX + monsterSize + 24, monsterY + 26, 36,
+  DrawText(bText.c_str(), monsterX + monsterSize + 24, monsterY + 46, 36,
            WHITE);
 
   // Residuo (aparece debajo del monstruo)
@@ -509,12 +509,14 @@ void DrawCombatScreen(int a, int b, int quotient, int remainder,
   DrawText(inputLabel.c_str(), (WINDOW_WIDTH - labelW) / 2, inputBoxY - 24, 22,
            {34, 32, 52, 255});
 
-  DrawRectangle(inputBoxX, inputBoxY, inputBoxW, inputBoxH, {10, 10, 20, 220});
+  DrawRectangle(inputBoxX, inputBoxY, inputBoxW, inputBoxH, {34, 32, 52, 220});
   DrawRectangleLinesEx(
       {(float)inputBoxX, (float)inputBoxY, (float)inputBoxW, (float)inputBoxH},
       2, {200, 200, 200, 255});
 
   string displayInput = "> " + input;
+  // el tiempo en segundos float (4) que se trunca a int divido % 2, siempre
+  // dara par o impar asi que se puede usar para alternar
   int cursorBlink = (int)(GetTime() * 4) % 2;
   if (cursorBlink) displayInput += "_";
   DrawText(displayInput.c_str(), inputBoxX + 8, inputBoxY + 8, 20, WHITE);
@@ -545,6 +547,7 @@ int main() {
   sndManager.LoadMusic("mounstruo", "assets/sounds/mounstro.ogg");
   sndManager.LoadMusic("mazmorra", "assets/sounds/mazmorra.ogg");
   sndManager.LoadMusic("menu", "assets/sounds/menu.ogg");
+  sndManager.Load("faa", "assets/sounds/faa.ogg");
 
   Music musicMenu = sndManager.GetMusic("menu");
   Music musicMazmorra = sndManager.GetMusic("mazmorra");
@@ -553,10 +556,12 @@ int main() {
 
   musicMenu.looping = false;
 
+  Sound faa = sndManager.Get("faa");
+
   // cargar texturas
   TextureManager texManager;
   texManager.Load("tileset", "assets/pared-mazmorra.png");
-  texManager.Load("player", "assets/player.png");
+  texManager.Load("player", "assets/player-2.png");
   texManager.Load("sword", "assets/espada.png");
   texManager.Load("big-sword", "assets/espada-grande.png");
   texManager.Load("big-monster", "assets/mounstruo-grande.png");
@@ -678,19 +683,23 @@ int main() {
           // Cartel
           if (tileID == 2) {
             if (currentMap == &Afuera) {
-              newMessage = "Bienvenido a la mazmorra de euclides";
+              newMessage =
+                  "Bienvenido a la mazmorra de euclides \n"
+                  "el tamaño no importa, sino como lo usas";
             } else if (currentMap == &Mazmorra) {
               newMessage =
-                  "estos monstruos protegen la puerta de salida \n para "
-                  "poder "
-                  "salir debes derrotarlos matematicamente";
+                  "estos monstruos protegen la puerta de salida \n "
+                  "para poder salir debes derrotarlos euclidianamente";
             }
           }
 
           // Espada
           if (!tieneEspada && playerTileX == espadaTileX &&
               playerTileY == espadaTileY) {
-            newMessage = "Presiona A para recoger la espada";
+            newMessage =
+                "Esta es la legendaria espada de la division\n"
+                "con ella podras dividir a cualquier enemigo\n"
+                "Presiona A para recoger la espada";
             if (IsKeyPressed(KEY_A)) {
               tieneEspada = true;
             }
@@ -702,7 +711,7 @@ int main() {
           if (tileID == 8) {
             if (currentMap == &Afuera) {
               if (!tieneEspada) {
-                currentMessage = "te la van a meter si entras sin espada papu";
+                currentMessage = "si entras sin espada te haran una piedra!!!";
               } else {
                 currentMap = &Mazmorra;
                 player.position.x = TILE_SIZE / 2.0f;
@@ -710,7 +719,9 @@ int main() {
               }
             } else if (currentMap == &Mazmorra) {
               if (monstersDefeated != 3) {
-                currentMessage = "debes derrotar a todos los monstruos";
+                currentMessage =
+                    "debes derrotar a todos los monstruos \n"
+                    "no seas como hernanadez con flojera ";
 
               } else {
                 currentState = GameState::WIN;
@@ -822,6 +833,7 @@ int main() {
               combatTimer = 2.5f;
             }
           } else {
+            PlaySound(faa);
             playerHP--;
             combatFeedback = 2;
             monsterAnimState = 1;
@@ -867,6 +879,14 @@ int main() {
           DrawTextureV(sword, pos, WHITE);
         }
 
+        // esto es para que sostenga la espada
+        if (tieneEspada) {
+          DrawTextureV(sword,
+                       {player.position.x - sword.width,
+                        player.position.y - sword.height + 6},
+                       WHITE);
+        }
+
         player.Draw();
         break;
 
@@ -887,7 +907,7 @@ int main() {
 
     // Componer canvas + UI en screenRT
     BeginTextureMode(screenRT);
-    ClearBackground(BLACK);
+    ClearBackground({34, 32, 52, 255});
 
     DrawTexturePro(canvas.texture, canvasSourceRec, screenRTDst, origin, 0.0f,
                    WHITE);
@@ -929,7 +949,7 @@ int main() {
       }
 
       // Creditos
-      string cred = "~ juego creado por: xxx ~";
+      string cred = "~ juego creado por: Jesús Valencia ~";
       int cw = MeasureText(cred.c_str(), 14);
       DrawText(cred.c_str(), (WINDOW_WIDTH - cw) / 2, 680, 14,
                {120, 120, 120, 255});
@@ -973,7 +993,7 @@ int main() {
       DrawText(cred1.c_str(), (WINDOW_WIDTH - cw1) / 2, WINDOW_HEIGHT / 2 + 70,
                16, {180, 180, 180, 255});
 
-      string cred2 = "agradecimientos especiales a Gemini";
+      string cred2 = "agradecimientos especiales a Taylor";
       int cw2 = MeasureText(cred2.c_str(), 16);
       DrawText(cred2.c_str(), (WINDOW_WIDTH - cw2) / 2, WINDOW_HEIGHT / 2 + 95,
                16, {180, 180, 180, 255});
@@ -983,7 +1003,7 @@ int main() {
 
     // Dibujar screenRT en la pantalla real con CRT
     BeginDrawing();
-    ClearBackground(BLACK);
+    ClearBackground({34, 32, 52, 255});
     BeginShaderMode(crtShader);
     DrawTexturePro(screenRT.texture, screenRTSrc, screenRTDst, origin, 0.0f,
                    WHITE);
