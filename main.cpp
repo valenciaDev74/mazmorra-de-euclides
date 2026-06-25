@@ -323,28 +323,6 @@ struct Player {
 };
 
 /**
- * @brief Estructura de bala (codigo residual, no utilizado).
- * @details Codigo sobrante de cuando se estaba aprendiendo raylib.
- *          Se mantiene comentado como referencia.
- */
-// struct Bullet {
-//   Vector2 position;
-//   float speed;
-//   bool active;
-
-//   void Update(float deltaTime) {
-//     position.y += deltaTime * speed;
-//     if (position.y < 0) active = false;
-//   }
-
-//   void Draw() {
-//     if (active) {
-//       DrawCircleV(position, 5, YELLOW);
-//     }
-//   }
-// };
-
-/**
  * @brief Dibuja el mapa completo recorriendo su matriz de tiles.
  * @param map Matriz de tiles del mapa.
  * @param tileset Textura del tileset a usar.
@@ -407,126 +385,265 @@ void DrawDialogueBox(const string& message) {
 }
 
 /**
- * @brief Dibuja la pantalla de combate matematico.
- * @details Muestra el monstruo animado, los numeros A y B, el cociente y
- *          residuo, la barra de vida/pociones y el cuadro de entrada.
- * @param a Dividendo actual.
- * @param b Divisor actual.
- * @param quotient Cociente calculado (A/B).
- * @param remainder Residuo de la division.
- * @param showResult true para mostrar resultado de la ronda.
- * @param input Texto ingresado por el jugador.
- * @param hp Puntos de vida actuales del jugador.
- * @param pots Pociones restantes.
- * @param feedback Estado del feedback: 0=nada, 1=correcto, 2=incorrecto.
- * @param bigSword Textura de la espada grande.
- * @param bigMonster Textura del monstruo grande.
- * @param monsterFrame Frame actual de animacion del monstruo.
+ * @brief Sistema de combate matematico basado en el algoritmo de Euclides.
+ * @details Gestiona el ciclo completo de combate: generacion de divisiones,
+ *          entrada numerica del jugador, validacion de respuestas, avance
+ *          del algoritmo de Euclides, animacion del monstruo y renderizado.
  */
-void DrawCombatScreen(int a, int b, int quotient, int remainder,
-                      bool showResult, const string& input, int hp, int pots,
-                      int feedback, Texture2D bigSword, Texture2D bigMonster,
-                      int monsterFrame) {
-  // Fondo oscuro
-  DrawRectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, {34, 32, 52, 255});
+struct CombatSystem {
+  bool active = false;
+  bool won = false;
 
-  // Titulo
-  string title = "COMBATE";
-  int titleW = MeasureText(title.c_str(), 28);
-  DrawText(title.c_str(), (WINDOW_WIDTH - titleW) / 2, 20, 28,
-           {200, 50, 50, 255});
+  // las coordenadas son para quitarlo despues
+  int monsterTileX = 0;
+  int monsterTileY = 0;
 
-  // Cociente (aparece arriba del monstruo)
-  if (showResult) {
-    string qText = "cociente: " + to_string(quotient);
-    int qW = MeasureText(qText.c_str(), 20);
-    DrawText(qText.c_str(), (WINDOW_WIDTH - qW) / 2, 78, 20, YELLOW);
+  int a = 0;
+  int b = 0;
+  int hp = 3;
+  int maxHP = 3;
+  int potions = 3;
+  string input;
+  int lastQuotient = 0;
+  int lastRemainder = 0;
+  bool showResult = false;
+  float timer = 0;
+  int feedback = 0;
+  int monsterFrame = 0;
+  float monsterAnimTimer = 0;
+  int monsterAnimState = 0;
+
+  /**
+   * @brief Inicia un nuevo combate en las coordenadas dadas.
+   * @details Genera una division aleatoria A/B, reinicia todas las
+   *          variables de estado y marca el combate como activo.
+   * @param tileX Coordenada X del monstruo en el mapa.
+   * @param tileY Coordenada Y del monstruo en el mapa.
+   */
+  void Start(int tileX, int tileY) {
+    a = 10 + rand() % 20;
+    b = 2 + rand() % 9;
+    input = "";
+    lastQuotient = 0;
+    lastRemainder = 0;
+    showResult = false;
+    timer = 0;
+    // feedback es el 1: correcto o 2: incorrecto
+    feedback = 0;
+    won = false;
+    monsterTileX = tileX;
+    monsterTileY = tileY;
+    monsterFrame = 0;
+    monsterAnimTimer = 0;
+    // 0: default, 1; miss, 2: hit
+    monsterAnimState = 0;
+    active = true;
   }
 
-  // Monstruo animado
-  int monsterSize = 144;
-  int monsterX = (WINDOW_WIDTH - monsterSize) / 2;
-  int monsterY = 108;
-  int srcX = (monsterFrame % 4) * 48;
-  int srcY = (monsterFrame / 4) * 48;
-  Rectangle monsterSrc = {(float)srcX, (float)srcY, 48, 48};
-  Rectangle monsterDst = {(float)monsterX, (float)monsterY, (float)monsterSize,
-                          (float)monsterSize};
-  DrawTexturePro(bigMonster, monsterSrc, monsterDst, {0, 0}, 0, WHITE);
+  /**
+   * @brief Actualiza la logica del combate cada frame.
+   * @details Procesa el temporizador entre rondas, la animacion del
+   *          monstruo, la entrada numerica del jugador (0-9, BACKSPACE),
+   *          el uso de pociones (P) y la validacion de la respuesta
+   *          al presionar ENTER. Si la respuesta es correcta avanza el
+   *          algoritmo de Euclides; si es incorrecta descuenta HP.
+   *          Cuando active=false, el main loop debe revisar won para
+   *          determinar si fue victoria o derrota.
+   * @param dt Tiempo transcurrido desde el ultimo frame.
+   * @param faa Efecto de sonido a reproducir en respuesta incorrecta.
+   */
+  void Update(float dt, Sound faa) {
+    if (!active) return;
 
-  // Numero A a la izquierda
-  string aText = to_string(a);
-  int aW = MeasureText(aText.c_str(), 36);
-  DrawText(aText.c_str(), monsterX - aW - 24, monsterY + 46, 36, WHITE);
+    // si hay timer de pausa
+    if (timer > 0) {
+      // decrementa
+      timer -= dt;
+      // si llega a 0
+      if (timer <= 0) {
+        // y gana
+        if (won) {
+          // active es false y retorna
+          active = false;
 
-  // Numero B a la derecha
-  string bText = to_string(b);
-  DrawText(bText.c_str(), monsterX + monsterSize + 24, monsterY + 46, 36,
-           WHITE);
+          // si no solo quita los textos
+        } else if (feedback == 1 || feedback == 2) {
+          showResult = false;
+          feedback = 0;
+        }
+      }
+      return;
+    }
 
-  // Residuo (aparece debajo del monstruo)
-  if (showResult) {
-    string rText = "residuo: " + to_string(remainder);
-    int rW = MeasureText(rText.c_str(), 20);
-    DrawText(rText.c_str(), (WINDOW_WIDTH - rW) / 2,
-             monsterY + monsterSize + 10, 20, YELLOW);
+    // si la animacion actual no es la default
+    if (monsterAnimState != 0) {
+      // aumenta el timer
+      monsterAnimTimer += dt;
+      // si llega a 2.5s
+      if (monsterAnimTimer >= 2.5f) {
+        // reinicia al default
+        monsterFrame = 0;
+        monsterAnimState = 0;
+      }
+    }
+
+    for (int k = KEY_ZERO; k <= KEY_NINE; k++) {
+      if (IsKeyPressed(k)) {
+        if (input.length() < 4) {
+          input += (char)('0' + (k - KEY_ZERO));
+        }
+      }
+    }
+
+    if (IsKeyPressed(KEY_BACKSPACE) && !input.empty()) {
+      input.pop_back();
+    }
+
+    if (IsKeyPressed(KEY_P) && potions > 0 && hp < maxHP) {
+      potions--;
+      hp++;
+    }
+
+    // enviar respuesta
+    if (IsKeyPressed(KEY_ENTER) && !input.empty()) {
+      int playerAnswer = stoi(input);
+      int correctQuotient = a / b;
+      int remainder = a % b;
+
+      lastQuotient = correctQuotient;
+      lastRemainder = remainder;
+      showResult = true;
+      input = "";
+
+      // si esta buena
+      if (playerAnswer == correctQuotient) {
+        // mostramos feedback
+        feedback = 1;
+        // actualizamos mounstruo
+        monsterAnimState = 2;
+        // cualquiera de los 3 frames
+        monsterFrame = 4 + rand() % 3;
+        // si el resto es cero
+        if (remainder == 0) {
+          // ya ganamos papi, cada quien pa su casa
+          won = true;
+        } else {
+          // si no pues actualizamos los coeficientes
+          a = b;
+          b = remainder;
+        }
+        // ponemos el tiempo
+        timer = 2.5f;
+      } else {
+        // JAJAJAJJA
+        PlaySound(faa);
+        hp--;
+        feedback = 2;
+        monsterAnimState = 1;
+        monsterFrame = 1 + rand() % 3;
+        timer = 2.5f;
+      }
+    }
   }
 
-  // Feedback
-  if (feedback == 1) {
-    string fText = "Correcto!";
-    int fW = MeasureText(fText.c_str(), 24);
-    DrawText(fText.c_str(), (WINDOW_WIDTH - fW) / 2,
-             monsterY + monsterSize + 40, 24, GREEN);
-  } else if (feedback == 2) {
-    string fText = "Incorrecto!";
-    int fW = MeasureText(fText.c_str(), 24);
-    DrawText(fText.c_str(), (WINDOW_WIDTH - fW) / 2,
-             monsterY + monsterSize + 40, 24, RED);
+  /**
+   * @brief Dibuja la pantalla de combate.
+   * @details Renderiza el fondo, titulo, monstruo animado con los
+   *          numeros A y B, cociente/residuo (si showResult), feedback
+   *          de acierto/error, barra de HP y pociones, espada decorativa,
+   *          y el cuadro de entrada numerica con cursor parpadeante.
+   * @param bigSword Textura de la espada grande (parte inferior).
+   * @param bigMonster Textura del monstruo grande (spritesheet 48x48).
+   */
+  void Draw(Texture2D bigSword, Texture2D bigMonster) {
+    DrawRectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, {34, 32, 52, 255});
+
+    string title = "COMBATE";
+    int titleW = MeasureText(title.c_str(), 28);
+    DrawText(title.c_str(), (WINDOW_WIDTH - titleW) / 2, 20, 28,
+             {200, 50, 50, 255});
+
+    if (showResult) {
+      string qText = "cociente: " + to_string(lastQuotient);
+      int qW = MeasureText(qText.c_str(), 20);
+      DrawText(qText.c_str(), (WINDOW_WIDTH - qW) / 2, 78, 20, YELLOW);
+    }
+
+    int monsterSize = 144;
+    int monsterX = (WINDOW_WIDTH - monsterSize) / 2;
+    int monsterY = 108;
+    int srcX = (monsterFrame % 4) * 48;
+    int srcY = (monsterFrame / 4) * 48;
+    Rectangle monsterSrc = {(float)srcX, (float)srcY, 48, 48};
+    Rectangle monsterDst = {(float)monsterX, (float)monsterY,
+                            (float)monsterSize, (float)monsterSize};
+    DrawTexturePro(bigMonster, monsterSrc, monsterDst, {0, 0}, 0, WHITE);
+
+    string aText = to_string(a);
+    int aW = MeasureText(aText.c_str(), 36);
+    DrawText(aText.c_str(), monsterX - aW - 24, monsterY + 46, 36, WHITE);
+
+    string bText = to_string(b);
+    DrawText(bText.c_str(), monsterX + monsterSize + 24, monsterY + 46, 36,
+             WHITE);
+
+    if (showResult) {
+      string rText = "residuo: " + to_string(lastRemainder);
+      int rW = MeasureText(rText.c_str(), 20);
+      DrawText(rText.c_str(), (WINDOW_WIDTH - rW) / 2,
+               monsterY + monsterSize + 10, 20, YELLOW);
+    }
+
+    if (feedback == 1) {
+      string fText = "Correcto!";
+      int fW = MeasureText(fText.c_str(), 24);
+      DrawText(fText.c_str(), (WINDOW_WIDTH - fW) / 2,
+               monsterY + monsterSize + 40, 24, GREEN);
+    } else if (feedback == 2) {
+      string fText = "Incorrecto!";
+      int fW = MeasureText(fText.c_str(), 24);
+      DrawText(fText.c_str(), (WINDOW_WIDTH - fW) / 2,
+               monsterY + monsterSize + 40, 24, RED);
+    }
+
+    string hpText = "Vida: ";
+    for (int i = 0; i < hp; i++) hpText += "X ";
+    DrawText(hpText.c_str(), 30, 290, 22, RED);
+
+    string potText = "Pociones: " + to_string(potions) + "  [P]";
+    DrawText(potText.c_str(), 30, 320, 22, GREEN);
+
+    Rectangle swordSrc = {0, 0, 144, 48};
+    Rectangle swordDst = {0, 460, 720, 240};
+    DrawTexturePro(bigSword, swordSrc, swordDst, {0, 0}, 0, WHITE);
+
+    int inputBoxW = 250;
+    int inputBoxH = 40;
+    int inputBoxX = (WINDOW_WIDTH - inputBoxW) / 2;
+    int inputBoxY = 560;
+
+    string inputLabel = "Escribe el cociente:";
+    int labelW = MeasureText(inputLabel.c_str(), 22);
+    DrawText(inputLabel.c_str(), (WINDOW_WIDTH - labelW) / 2, inputBoxY - 24,
+             22, {34, 32, 52, 255});
+
+    DrawRectangle(inputBoxX, inputBoxY, inputBoxW, inputBoxH,
+                  {34, 32, 52, 220});
+    DrawRectangleLinesEx({(float)inputBoxX, (float)inputBoxY, (float)inputBoxW,
+                          (float)inputBoxH},
+                         2, {200, 200, 200, 255});
+
+    string displayInput = "> " + input;
+    int cursorBlink = (int)(GetTime() * 4) % 2;
+    if (cursorBlink) displayInput += "_";
+    DrawText(displayInput.c_str(), inputBoxX + 8, inputBoxY + 8, 20, WHITE);
+
+    string instr = "ENTER para confirmar  |  BACKSPACE para borrar";
+    int instrW = MeasureText(instr.c_str(), 16);
+    DrawText(instr.c_str(), (WINDOW_WIDTH - instrW) / 2, inputBoxY + 50, 16,
+             {34, 32, 52, 255});
   }
-
-  // HP y pociones
-  string hpText = "Vida: ";
-  for (int i = 0; i < hp; i++) hpText += "X ";
-  DrawText(hpText.c_str(), 30, 290, 22, RED);
-
-  string potText = "Pociones: " + to_string(pots) + "  [P]";
-  DrawText(potText.c_str(), 30, 320, 22, GREEN);
-
-  // Espada grande
-  Rectangle swordSrc = {0, 0, 144, 48};
-  Rectangle swordDst = {0, 460, 720, 240};
-  DrawTexturePro(bigSword, swordSrc, swordDst, {0, 0}, 0, WHITE);
-
-  // Input box
-  int inputBoxW = 250;
-  int inputBoxH = 40;
-  int inputBoxX = (WINDOW_WIDTH - inputBoxW) / 2;
-  int inputBoxY = 560;
-
-  string inputLabel = "Escribe el cociente:";
-  int labelW = MeasureText(inputLabel.c_str(), 22);
-  DrawText(inputLabel.c_str(), (WINDOW_WIDTH - labelW) / 2, inputBoxY - 24, 22,
-           {34, 32, 52, 255});
-
-  DrawRectangle(inputBoxX, inputBoxY, inputBoxW, inputBoxH, {34, 32, 52, 220});
-  DrawRectangleLinesEx(
-      {(float)inputBoxX, (float)inputBoxY, (float)inputBoxW, (float)inputBoxH},
-      2, {200, 200, 200, 255});
-
-  string displayInput = "> " + input;
-  // el tiempo en segundos float (4) que se trunca a int divido % 2, siempre
-  // dara par o impar asi que se puede usar para alternar
-  int cursorBlink = (int)(GetTime() * 4) % 2;
-  if (cursorBlink) displayInput += "_";
-  DrawText(displayInput.c_str(), inputBoxX + 8, inputBoxY + 8, 20, WHITE);
-
-  // Instruccion
-  string instr = "ENTER para confirmar  |  BACKSPACE para borrar";
-  int instrW = MeasureText(instr.c_str(), 16);
-  DrawText(instr.c_str(), (WINDOW_WIDTH - instrW) / 2, inputBoxY + 50, 16,
-           {34, 32, 52, 255});
-}
+};
 
 /**
  * @brief Punto de entrada del juego.
@@ -607,28 +724,11 @@ int main() {
   int espadaTileX = 7;
   int espadaTileY = 8;
 
-  int potions = 3;
   int monstersDefeated = 0;
 
   string currentMessage = "";
 
-  // --- VARIABLES DE COMBATE ---
-  int combatA = 0;
-  int combatB = 0;
-  int playerHP = 3;
-  int playerMaxHP = 3;
-  string combatInput = "";
-  int lastQuotient = 0;
-  int lastRemainder = 0;
-  bool combatShowResult = false;
-  float combatTimer = 0;
-  int combatFeedback = 0;  // 0=nada, 1=correcto, 2=incorrecto
-  bool combatWon = false;
-  int combatMonsterTileX = 0;
-  int combatMonsterTileY = 0;
-  int monsterFrame = 0;
-  float monsterAnimTimer = 0.0f;
-  int monsterAnimState = 0;  // 0=idle, 1=ataque, 2=danho
+  CombatSystem combat;
 
   // --- BUCLE PRINCIPAL ---
   while (!WindowShouldClose()) {
@@ -664,8 +764,8 @@ int main() {
           currentMap = &Afuera;
           player.position = {72, 72};
           tieneEspada = false;
-          playerHP = playerMaxHP;
-          potions = 3;
+          combat.hp = combat.maxHP;
+          combat.potions = 3;
           monstersDefeated = 0;
           currentMessage = "";
           currentState = GameState::PLAYING;
@@ -737,20 +837,7 @@ int main() {
 
           // Iniciar combate
           if ((tileID == 6 || tileID == 7) && tieneEspada) {
-            combatA = 10 + rand() % 20;
-            combatB = 2 + rand() % 9;
-            combatInput = "";
-            lastQuotient = 0;
-            lastRemainder = 0;
-            combatShowResult = false;
-            combatTimer = 0;
-            combatFeedback = 0;
-            combatWon = false;
-            combatMonsterTileX = playerTileX;
-            combatMonsterTileY = playerTileY;
-            monsterFrame = 0;
-            monsterAnimTimer = 0;
-            monsterAnimState = 0;
+            combat.Start(playerTileX, playerTileY);
             currentState = GameState::COMBAT;
           }
         }
@@ -758,96 +845,15 @@ int main() {
       }
 
       case GameState::COMBAT: {
-        // Si estamos mostrando resultado, esperar el timer
-        if (combatTimer > 0) {
-          combatTimer -= deltaTime;
-          if (combatTimer <= 0) {
-            if (combatWon) {
-              // Volver al mapa
-
-              // quitar al enemigo de ahi, reemplaza con el tile 15
-              currentMap->baseLayer[combatMonsterTileY][combatMonsterTileX] =
-                  15;
-              monstersDefeated++;
-              currentState = GameState::PLAYING;
-            } else if (combatFeedback == 1) {
-              // Siguiente ronda (ya se actualizaron A y B)
-              combatShowResult = false;
-              combatFeedback = 0;
-            } else {
-              // Feedback incorrecto: misma ronda
-              combatShowResult = false;
-              combatFeedback = 0;
-            }
-          }
-          break;
-        }
-
-        // Actualizar animacion del monstruo
-        if (monsterAnimState != 0) {
-          monsterAnimTimer += deltaTime;
-          if (monsterAnimTimer >= 2.5f) {
-            monsterFrame = 0;
-            monsterAnimState = 0;
-          }
-        }
-
-        // Input numerico
-        for (int k = KEY_ZERO; k <= KEY_NINE; k++) {
-          if (IsKeyPressed(k)) {
-            // esta vaina usa hexagesimal
-            if (combatInput.length() < 4) {
-              combatInput += (char)('0' + (k - KEY_ZERO));
-            }
-          }
-        }
-
-        if (IsKeyPressed(KEY_BACKSPACE) && !combatInput.empty()) {
-          combatInput.pop_back();
-        }
-
-        // Usar pocion
-        if (IsKeyPressed(KEY_P) && potions > 0 && playerHP < playerMaxHP) {
-          potions--;
-          playerHP++;
-        }
-
-        // Confirmar respuesta
-        if (IsKeyPressed(KEY_ENTER) && !combatInput.empty()) {
-          int playerAnswer = stoi(combatInput);
-          int correctQuotient = combatA / combatB;
-          int remainder = combatA % combatB;
-
-          lastQuotient = correctQuotient;
-          lastRemainder = remainder;
-          combatShowResult = true;
-          combatInput = "";
-
-          if (playerAnswer == correctQuotient) {
-            combatFeedback = 1;
-            monsterAnimState = 2;
-            monsterAnimTimer = 0;
-            monsterFrame = 4 + rand() % 3;
-            if (remainder == 0) {
-              combatWon = true;
-              combatTimer = 2.5f;
-            } else {
-              combatA = combatB;
-              combatB = remainder;
-              combatTimer = 2.5f;
-            }
+        combat.Update(deltaTime, faa);
+        if (!combat.active) {
+          if (combat.won) {
+            currentMap->baseLayer[combat.monsterTileY][combat.monsterTileX] =
+                15;
+            monstersDefeated++;
+            currentState = GameState::PLAYING;
           } else {
-            PlaySound(faa);
-            playerHP--;
-            combatFeedback = 2;
-            monsterAnimState = 1;
-            monsterAnimTimer = 0;
-            monsterFrame = 1 + rand() % 3;
-            if (playerHP <= 0) {
-              currentState = GameState::GAMEOVER;
-            } else {
-              combatTimer = 2.5f;
-            }
+            currentState = GameState::GAMEOVER;
           }
         }
         break;
@@ -927,7 +933,7 @@ int main() {
                {220, 180, 60, 255});
 
       // Subtitulo
-      string sub = "~ un juego matematico ~";
+      string sub = "~ un juego sobre el algoritmo de euclides ~";
       int subW = MeasureText(sub.c_str(), 18);
       DrawText(sub.c_str(), (WINDOW_WIDTH - subW) / 2, 150, 18,
                {180, 180, 180, 255});
@@ -964,9 +970,7 @@ int main() {
     }
 
     if (currentState == GameState::COMBAT) {
-      DrawCombatScreen(combatA, combatB, lastQuotient, lastRemainder,
-                       combatShowResult, combatInput, playerHP, potions,
-                       combatFeedback, bigSword, bigMonster, monsterFrame);
+      combat.Draw(bigSword, bigMonster);
     }
 
     if (currentState == GameState::GAMEOVER) {
@@ -992,7 +996,7 @@ int main() {
       DrawText(text2.c_str(), (WINDOW_WIDTH - tw2) / 2, WINDOW_HEIGHT / 2 + 30,
                20, LIGHTGRAY);
 
-      string cred1 = "juego creado por: xxx";
+      string cred1 = "juego creado por: Jesús Valencia";
       int cw1 = MeasureText(cred1.c_str(), 16);
       DrawText(cred1.c_str(), (WINDOW_WIDTH - cw1) / 2, WINDOW_HEIGHT / 2 + 70,
                16, {180, 180, 180, 255});

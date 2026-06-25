@@ -27,6 +27,7 @@ Juego 2D tipo mazmorra donde el combate se resuelve con el **Algoritmo de Euclid
 ## Cosas hechas por la IA
 - Shaders
 - parte de la funcion CanMoveTo() para colisiones
+- parte del sistema de combate
 
 ## Como jugar
 
